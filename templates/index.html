@@ -1,0 +1,308 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Smart City Traffic Controller</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+
+<body>
+    <header class="topbar">
+        <div class="brand">
+            <span class="brand-icon">T</span>
+            <div>
+                <h1>Smart City Traffic Controller</h1>
+                <p>Game-theoretic route allocation</p>
+            </div>
+        </div>
+
+        <div class="topbar-actions">
+            <span class="status"><span></span> System Ready</span>
+            <button type="button" id="theme-toggle" class="theme-toggle">
+                <span id="theme-icon">🌙</span>
+                <span id="theme-label">Dark mode</span>
+            </button>
+        </div>
+    </header>
+
+    <main class="container">
+        <section class="intro">
+            <p class="eyebrow">TRAFFIC MANAGEMENT SYSTEM</p>
+            <h2>Route Allocation Dashboard</h2>
+            <p>
+                Optimize route recommendations using correlated equilibrium
+                and compare the expected cost with independent random choices.
+            </p>
+        </section>
+
+        <div class="layout">
+            <aside class="panel configuration">
+                <h3>Traffic Configuration</h3>
+                <p class="muted">Configure the current traffic conditions.</p>
+
+                <form method="POST">
+                    <label for="initial_a">Existing cars on Route A</label>
+                    <input type="number" id="initial_a" name="initial_a"
+                           min="0" required value="{{ initial_a }}">
+
+                    <label for="initial_b">Existing cars on Route B</label>
+                    <input type="number" id="initial_b" name="initial_b"
+                           min="0" required value="{{ initial_b }}">
+
+                    <label for="num_drivers">New drivers to allocate</label>
+                    <input type="number" id="num_drivers" name="num_drivers"
+                           min="1" max="8" required value="{{ num_drivers }}">
+
+                    <label for="trials">Random simulation trials</label>
+                    <input type="number" id="trials" name="trials"
+                           min="100" max="10000" step="100"
+                           required value="{{ trials }}">
+
+                    <button type="submit" class="run-button">
+                        Run Traffic Controller
+                    </button>
+                </form>
+
+                <div class="note">
+                    <strong>Model assumption</strong>
+                    <p>
+                        Travel times use illustrative congestion functions,
+                        not live road traffic data.
+                    </p>
+                </div>
+            </aside>
+
+            <div class="results">
+                {% if error %}
+                    <div class="error">{{ error }}</div>
+                {% endif %}
+
+                {% if result %}
+                    <section class="metrics">
+                        <article class="metric">
+                            <p>Controller Expected Cost</p>
+                            <h3>{{ "%.2f"|format(result.expected_cost) }}</h3>
+                            <span>Driver-minutes</span>
+                        </article>
+
+                        <article class="metric">
+                            <p>Random Average Cost</p>
+                            <h3>{{ "%.2f"|format(result.random_average) }}</h3>
+                            <span>Driver-minutes</span>
+                        </article>
+
+                        <article class="metric">
+                            <p>Cost Reduction</p>
+                            <h3 class="{% if result.reduction >= 0 %}positive{% else %}negative{% endif %}">
+                                {{ "%.2f"|format(result.reduction) }}%
+                            </h3>
+                            <span>Relative to random average</span>
+                        </article>
+                    </section>
+
+                    <section class="panel">
+                        <div class="section-heading">
+                            <div>
+                                <h3>Controller Recommendations</h3>
+                                <p class="muted">
+                                    Assignment sampled from the optimized distribution
+                                </p>
+                            </div>
+                            <span class="tag">Correlated Equilibrium</span>
+                        </div>
+
+                        <div class="recommendations">
+                            {% for route in result.selected %}
+                                <div class="driver">
+                                    <span>Driver {{ loop.index }}</span>
+                                    <strong class="route route-{{ route }}">
+                                        Route {{ route }}
+                                    </strong>
+                                </div>
+                            {% endfor %}
+                        </div>
+
+                        <p class="muted">
+                            Sampled assignment cost:
+                            <strong>
+                                {{ "%.2f"|format(result.selected_cost) }}
+                                driver-minutes
+                            </strong>
+                        </p>
+                    </section>
+
+                    <section class="panel">
+                        <h3>Traffic Distribution</h3>
+                        <p class="muted">
+                            Controller traffic is based on its sampled assignment.
+                            Random traffic shows average car counts across the trials.
+                        </p>
+
+                        {% set max_cars = [
+                            result.final_a,
+                            result.final_b,
+                            initial_a + num_drivers / 2,
+                            initial_b + num_drivers / 2,
+                            1
+                        ]|max %}
+
+                        <div class="chart-legend">
+                            <span><i class="dot blue"></i> Controller</span>
+                            <span><i class="dot orange"></i> Random Average</span>
+                        </div>
+
+                        {% for route in ["A", "B"] %}
+                            {% if route == "A" %}
+                                {% set controller_cars = result.final_a %}
+                                {% set random_cars = initial_a + num_drivers / 2 %}
+                            {% else %}
+                                {% set controller_cars = result.final_b %}
+                                {% set random_cars = initial_b + num_drivers / 2 %}
+                            {% endif %}
+
+                            <div class="bar-group">
+                                <div class="bar-label">Route {{ route }}</div>
+
+                                <div class="bar-row">
+                                    <span class="bar-name">Controller</span>
+                                    <div class="bar-track">
+                                        <div class="bar blue"
+                                             style="width: {{ controller_cars / max_cars * 100 }}%">
+                                        </div>
+                                    </div>
+                                    <span class="bar-value">{{ controller_cars }}</span>
+                                </div>
+
+                                <div class="bar-row">
+                                    <span class="bar-name">Random</span>
+                                    <div class="bar-track">
+                                        <div class="bar orange"
+                                             style="width: {{ random_cars / max_cars * 100 }}%">
+                                        </div>
+                                    </div>
+                                    <span class="bar-value">
+                                        {{ "%.2f"|format(random_cars) }}
+                                    </span>
+                                </div>
+                            </div>
+                        {% endfor %}
+                    </section>
+
+                    <section class="panel">
+                        <h3>Controller Route Travel Times</h3>
+                        <div class="table-wrap">
+                            <table>
+                                <thead>
+                                    <tr>
+                                        <th>Route</th>
+                                        <th>Final Cars</th>
+                                        <th>Travel Time per Car</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr>
+                                        <td>Route A</td>
+                                        <td>{{ result.final_a }}</td>
+                                        <td>{{ "%.2f"|format(result.route_a_time) }} min</td>
+                                    </tr>
+                                    <tr>
+                                        <td>Route B</td>
+                                        <td>{{ result.final_b }}</td>
+                                        <td>{{ "%.2f"|format(result.route_b_time) }} min</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </section>
+
+                    <section class="panel">
+                        <h3>Random Routing Results</h3>
+                        <div class="table-wrap">
+                            <table>
+                                <thead>
+                                    <tr><th>Metric</th><th>Result</th></tr>
+                                </thead>
+                                <tbody>
+                                    <tr>
+                                        <td>Simulation trials</td>
+                                        <td>{{ result.trials }}</td>
+                                    </tr>
+                                    <tr>
+                                        <td>Average total travel time</td>
+                                        <td>{{ "%.2f"|format(result.random_average) }} driver-minutes</td>
+                                    </tr>
+                                    <tr>
+                                        <td>Minimum total travel time</td>
+                                        <td>{{ "%.2f"|format(result.random_minimum) }} driver-minutes</td>
+                                    </tr>
+                                    <tr>
+                                        <td>Maximum total travel time</td>
+                                        <td>{{ "%.2f"|format(result.random_maximum) }} driver-minutes</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </section>
+
+                    <section class="panel">
+                        <h3>Detailed Results</h3>
+                        <div class="table-wrap">
+                            <table>
+                                <thead>
+                                    <tr><th>Metric</th><th>Controller</th></tr>
+                                </thead>
+                                <tbody>
+                                    <tr><td>Existing Route A traffic</td><td>{{ initial_a }}</td></tr>
+                                    <tr><td>Existing Route B traffic</td><td>{{ initial_b }}</td></tr>
+                                    <tr><td>New drivers assigned to Route A</td><td>{{ result.new_a }}</td></tr>
+                                    <tr><td>New drivers assigned to Route B</td><td>{{ result.new_b }}</td></tr>
+                                    <tr><td>Final Route A traffic</td><td>{{ result.final_a }}</td></tr>
+                                    <tr><td>Final Route B traffic</td><td>{{ result.final_b }}</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </section>
+                {% else %}
+                    <section class="panel empty-state">
+                        <div class="empty-icon">↗</div>
+                        <h3>Ready to analyze traffic</h3>
+                        <p>
+                            Configure the traffic conditions and run the controller
+                            to view recommendations and results.
+                        </p>
+                    </section>
+                {% endif %}
+            </div>
+        </div>
+
+        <footer>Smart City Traffic Controller · Game-theoretic modeling demo</footer>
+    </main>
+
+    <script>
+        const toggle = document.getElementById("theme-toggle");
+        const icon = document.getElementById("theme-icon");
+        const label = document.getElementById("theme-label");
+
+        function applyTheme(theme) {
+            document.documentElement.setAttribute("data-theme", theme);
+
+            const dark = theme === "dark";
+            icon.textContent = dark ? "☀️" : "🌙";
+            label.textContent = dark ? "Light mode" : "Dark mode";
+        }
+
+        const savedTheme = localStorage.getItem("traffic-theme") || "light";
+        applyTheme(savedTheme);
+
+        toggle.addEventListener("click", () => {
+            const current = document.documentElement.getAttribute("data-theme");
+            const next = current === "dark" ? "light" : "dark";
+
+            applyTheme(next);
+            localStorage.setItem("traffic-theme", next);
+        });
+    </script>
+</body>
+</html>
